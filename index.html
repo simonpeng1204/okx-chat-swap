@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Solana 交易确认</title>
+  <link rel="icon" href="./icon.png" type="image/png">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="top-content">
+      <div class="brand"><img src="./icon.png" width="38" height="38" alt=""><span>Solana 交易确认</span></div>
+      <span class="network"><span class="dot" aria-hidden="true"></span>Solana 主网</span>
+    </div>
+  </header>
+  <main>
+    <header class="intro">
+      <h1>核对兑换预览</h1>
+      <p>导入父代理生成的预览，再填入父代理通过独立渠道提供的哈希。</p>
+    </header>
+    <div class="grid">
+      <section class="card" aria-labelledby="import-title">
+        <h2 id="import-title">导入预览</h2>
+        <form id="review-form" novalidate>
+          <div class="input-title">
+            <label for="preview-json">预览 JSON</label>
+            <label class="upload" for="preview-file">选择 JSON 文件
+              <input id="preview-file" type="file" accept=".json,application/json">
+            </label>
+          </div>
+          <textarea id="preview-json" rows="7" spellcheck="false" autocomplete="off" placeholder="粘贴 CLI 输出的完整 JSON"></textarea>
+          <label for="pinned-hash">独立 SHA-256 哈希</label>
+          <input id="pinned-hash" type="text" maxlength="64" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="64 位十六进制哈希">
+          <button class="primary" type="submit">核验预览</button>
+        </form>
+        <p id="review-status" class="status" role="status">等待预览 JSON 和独立 SHA-256 哈希。</p>
+        <p class="privacy">预览只在本页内存中处理。</p>
+      </section>
+      <section class="card intent" aria-labelledby="details-title">
+        <header class="card-header">
+          <h2 id="details-title">交易详情</h2>
+          <span class="countdown" id="countdown"></span>
+        </header>
+        <div id="empty-details" class="empty"><p>核验后显示金额、接收地址和有效期。</p></div>
+        <div id="details" hidden>
+          <div class="amount">
+            <div><span>输入金额</span><strong id="amount"></strong></div>
+            <div><span>价格影响</span><strong id="impact"></strong></div>
+          </div>
+          <dl>
+            <dt>数据来源</dt><dd id="source"></dd>
+            <dt>网络</dt><dd id="network"></dd>
+            <dt>链 ID</dt><dd id="chain-id"></dd>
+            <dt>兑换模式</dt><dd id="mode"></dd>
+            <dt>输入 mint</dt><dd id="from-mint"></dd>
+            <dt>输出 mint</dt><dd id="to-mint"></dd>
+            <dt>输入最小单位</dt><dd id="amount-raw"></dd>
+            <dt>输入代币精度</dt><dd id="decimals"></dd>
+            <dt>接收地址</dt><dd id="recipient"></dd>
+            <dt>滑点上限</dt><dd id="slippage"></dd>
+            <dt>预估收到</dt><dd id="to-amount"></dd>
+            <dt>最低收到</dt><dd id="min-amount"></dd>
+            <dt>生成时间</dt><dd id="created-at"></dd>
+            <dt>过期时间（布里斯班）</dt><dd id="expires-at"></dd>
+            <dt>SHA-256</dt><dd id="digest"></dd>
+          </dl>
+        </div>
+      </section>
+      <section class="card wallet" aria-labelledby="wallet-title">
+        <div>
+          <h2 id="wallet-title">OKX 钱包</h2>
+          <p id="wallet-status" role="status">尚不可连接。需要已配置的公网 HTTPS 页面和可访问的 PNG 图标。</p>
+          <a id="launch" rel="noreferrer" hidden>打开 OKX App</a>
+        </div>
+        <div class="wallet-actions">
+          <button id="connect" type="button" disabled>连接 OKX 钱包</button>
+          <button id="sign" type="button" disabled>请求交易签名</button>
+        </div>
+      </section>
+    </div>
+    <noscript>启用 JavaScript 才能在设备上核验预览。</noscript>
+  </main>
+</body>
+</html>
