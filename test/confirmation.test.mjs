@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { canonical, vectorPreview } from './semantics-vectors.mjs';
 
 const now = Date.parse('2026-11-18T12:00:00+10:00');
 const CHAIN = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp';
@@ -17,28 +18,13 @@ const reviewFor = async () => {
   return inspectPreview;
 };
 
-// Mock API payloads use only ASCII, and the captured Python envelopes cover Unicode.
 function seal(preview) {
-  const keys = new Set();
-  JSON.stringify(preview, (key, value) => {
-    keys.add(key);
-    return value;
-  });
-  const canonical_json = JSON.stringify(preview, [...keys].sort());
+  const canonical_json = canonical(preview);
   return { preview, canonical_json, sha256: createHash('sha256').update(canonical_json).digest('hex') };
 }
 
 function mockApiPayload() {
-  const payload = structuredClone(fixture.preview);
-  Object.assign(payload, { source: 'okx_dex_api', dry_run: false, notice: 'Mock response' });
-  for (const quote of [payload.quote, payload.unsigned.routerResult]) {
-    delete quote.fromToken.tokenSymbol;
-    delete quote.toToken.tokenSymbol;
-  }
-  // Synthetic packet with empty signatures and zero instructions.
-  payload.unsigned.tx.data = 'E3cqE89t5PMHL1KorzdJScrGm6TiKhprP5EGuXzyCWgQjBJVUQVxLYFefzwRjwWFJANiXnndE61HkxT1vG14J'
-    + 'eCs8L3PNhb2zMZXHQpx5xMTogVqaB8wrjkfezdKavSsapHHDRnCEaWmMDAoVdHXTeUUZeffD2gdAx5q1BxBabcEpq9QJq96fH';
-  return payload;
+  return vectorPreview('legacy_exact_in');
 }
 
 async function review(envelope, pin = envelope.sha256, time = now) {
@@ -91,6 +77,12 @@ test('fixture sentinel remains blocked even if presented as API data', async () 
   assert.equal(result.canConnect, false);
 });
 
+test('old unsigned packages cannot initialize the wallet', async () => {
+  const result = await review(seal(vectorPreview('old_preview')));
+  assert.equal(result.status, 'unsigned_unreviewed');
+  assert.equal(result.canConnect, false);
+});
+
 test('quote-only preview is displayable with missing price impact and cannot connect', async () => {
   const payload = mockApiPayload();
   payload.unsigned = null;
@@ -104,7 +96,7 @@ async function walletSetup(options = {}) {
   const payload = mockApiPayload();
   const envelope = seal(payload);
   const result = await review(envelope);
-  assert.equal(result.status, 'unsigned_unreviewed');
+  assert.equal(result.status, 'unsigned_reviewed');
   assert.equal(result.canConnect, true);
   const { createWalletController } = await import('../wallet.mjs');
   const calls = [];

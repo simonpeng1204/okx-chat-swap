@@ -1,4 +1,8 @@
-const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+import { pubkey, unsignedPacket } from './solana-wire.mjs';
+import { reviewSemantics } from './semantics.mjs';
+
+const DEX_NOTICE = 'OKX DEX API 报价材料。未签名交易须通过链上指令语义审查。';
+const reviewedWires = new WeakMap();
 const MAX_U64 = 2n ** 64n - 1n;
 const HASH = /^[a-f0-9]{64}$/;
 const BINDING_KEYS = [
@@ -38,33 +42,13 @@ function frozen(value) {
   return value;
 }
 
-function base58Bytes(value) {
-  let number = 0n;
-  for (const character of value) number = number * 58n + BigInt(BASE58.indexOf(character));
-  const leading = value.length - value.replace(/^1+/, '').length;
-  const hex = number ? number.toString(16) : '';
-  const byteCount = Math.ceil(hex.length / 2);
-  const padded = hex.padStart(byteCount * 2, '0');
-  const bytes = new Uint8Array(leading + byteCount);
-  for (let index = 0; index < byteCount; index++) {
-    bytes[leading + index] = Number.parseInt(padded.slice(2 * index, 2 * index + 2), 16);
-  }
-  return bytes;
-}
-
 function validAddress(value) {
-  return matches(value, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/) && base58Bytes(value).length === 32;
-}
-
-function unsignedPacket(value) {
-  if (!matches(value, /^[1-9A-HJ-NP-Za-km-z]{70,1683}$/)) return false;
-  const bytes = base58Bytes(value);
-  const count = bytes[0];
-  const start = 1 + 64 * count;
-  if (!count || start + 3 >= bytes.length || bytes.length > 1232 || bytes.subarray(1, start).some(Boolean)) {
+  try {
+    pubkey(value);
+    return true;
+  } catch {
     return false;
   }
-  return bytes[start + Number(bytes[start] === 0x80)] === count;
 }
 
 function brisbaneTime(value) {
@@ -113,22 +97,31 @@ function validQuote(quote, binding) {
       || (matches(quote.priceImpactPercent, /^-?\d+(?:\.\d+)?$/) && quote.priceImpactPercent.length <= 80));
 }
 
+function validDexQuote(quote, binding) {
+  return hasKeys(quote, ['chainIndex', 'fromTokenAmount', 'toTokenAmount', 'fromToken', 'toToken',
+    'priceImpactPercent', 'swapMode'])
+    && [quote.fromToken, quote.toToken].every(token => hasKeys(token, ['decimal', 'tokenContractAddress']))
+    && validQuote(quote, binding);
+}
+
 function validUnsigned(unsigned, quote, binding, fixture = false) {
-  if (!hasKeys(unsigned, ['request', 'routerResult', 'tx'])) return false;
+  const fields = ['request', 'routerResult', 'tx'];
+  if (!fixture && isRecord(unsigned) && Object.hasOwn(unsigned, 'instructionReview')) fields.push('instructionReview');
+  if (!hasKeys(unsigned, fields)) return false;
   const { request, routerResult, tx } = unsigned;
   const expectedRequest = {
     chainIndex: binding.chainIndex, amount: binding.amountRaw, fromTokenAddress: binding.fromMint,
     toTokenAddress: binding.toMint, swapMode: binding.swapMode, slippagePercent: binding.slippagePercent,
     userWalletAddress: binding.recipient, swapReceiverAddress: binding.recipient,
   };
-  if (canonical(request) !== canonical(expectedRequest) || !validQuote(routerResult, binding)
+  if (canonical(request) !== canonical(expectedRequest) || !(fixture ? validQuote : validDexQuote)(routerResult, binding)
       || routerResult.toToken.decimal !== quote.toToken.decimal
       || routerResult.priceImpactPercent === null || quote.priceImpactPercent === null) return false;
   if (!hasKeys(tx, ['from', 'slippagePercent', 'minReceiveAmount', 'data']) || tx.from !== binding.recipient
       || tx.slippagePercent !== binding.slippagePercent || !validRaw(tx.minReceiveAmount)) return false;
   if (fixture) {
     if (!matches(tx.data, /^FIXTURE_/) || canonical(routerResult) !== canonical(quote)) return false;
-  } else if (!unsignedPacket(tx.data)) return false;
+  } else unsignedPacket(tx.data);
   const [whole, fraction = ''] = decimalParts(binding.slippagePercent);
   const scale = 10n ** BigInt(fraction.length);
   const basis = 100n * scale;
@@ -139,7 +132,14 @@ function validUnsigned(unsigned, quote, binding, fixture = false) {
   return fixture ? minimum === bound : minimum >= bound && minimum <= estimate;
 }
 
-export async function inspectPreview(text, pinnedHash, now = Date.now()) {
+// Only inspectPreview can issue an approved selection. Return a fresh copy to the SDK bridge.
+export function reviewedTransactionBytes(selection) {
+  const data = reviewedWires.get(selection);
+  return data ? unsignedPacket(data) : null;
+}
+
+export async function inspectPreview(text, pinnedHash, now) {
+  const time = () => now === undefined ? Date.now() : now;
   const rejected = status => Object.freeze({ status, canConnect: false });
   if (!matches(pinnedHash, HASH)) return rejected('hash_required');
   if (typeof text !== 'string' || text.length > 250_000) return rejected('invalid');
@@ -157,19 +157,29 @@ export async function inspectPreview(text, pinnedHash, now = Date.now()) {
     const { binding, source, dry_run, quote, unsigned } = preview;
     const createdAt = brisbaneTime(binding.createdAt);
     const expiresAt = brisbaneTime(binding.expiresAt);
-    const state = (status, canConnect = false) => frozen({
-      status: now >= expiresAt ? 'expired' : status,
-      canConnect: canConnect && now < expiresAt, payload: preview, sha256, createdAt, expiresAt,
-    });
-    if (!Number.isFinite(now) || now < createdAt) return rejected('clock');
+    const state = (status, semantics = null) => {
+      const instant = time();
+      const active = createdAt <= instant && instant < expiresAt;
+      const canConnect = status === 'unsigned_reviewed' && active;
+      const result = frozen({
+        status: instant >= expiresAt ? 'expired' : instant < createdAt ? 'clock' : status,
+        canConnect, payload: preview, sha256, createdAt, expiresAt, semantics,
+      });
+      if (canConnect) reviewedWires.set(result, unsigned.tx.data);
+      return result;
+    };
+    if (!Number.isFinite(time()) || time() < createdAt) return rejected('clock');
     if (source === 'dry_run' && dry_run === true && quote === null && unsigned === null) return state('dry_run');
     if (source === 'fixture' && dry_run === true && validQuote(quote, binding)
         && (unsigned === null || validUnsigned(unsigned, quote, binding, true))) return state('fixture');
-    if (source !== 'okx_dex_api' || dry_run !== false || !validQuote(quote, binding)) return rejected('invalid');
+    if (source !== 'okx_dex_api' || dry_run !== false || preview.notice !== DEX_NOTICE || !validDexQuote(quote, binding)) return rejected('invalid');
     if (serialized.includes('FIXTURE_')) return rejected('fixture_material');
     if (unsigned === null) return state('quote_only');
     if (!validUnsigned(unsigned, quote, binding)) return rejected('invalid');
-    return state('unsigned_unreviewed', true);
+    const semantics = await reviewSemantics(preview, time());
+    if (semantics.status === 'passed') return state('unsigned_reviewed', semantics);
+    const status = semantics.reasons[0] === 'missing_instruction_review' ? 'unsigned_unreviewed' : 'unsigned_rejected';
+    return state(status, semantics);
   } catch {
     return rejected('invalid');
   }

@@ -6,7 +6,7 @@ import struct
 
 EXPECTED_FILES = {
     '.nojekyll', 'index.html', 'styles.css', 'icon.png', 'app.mjs', 'confirmation.mjs',
-    'hosting.mjs', 'wallet.mjs', 'wallet-sdk.mjs', 'deployment.mjs',
+    'hosting.mjs', 'wallet.mjs', 'wallet-sdk.mjs', 'deployment.mjs', 'semantics.mjs', 'solana-wire.mjs',
 }
 FIRST_PARTY_PATTERNS = {
     'OKX authentication labels': rb'OK-ACCESS-(?:KEY|SIGN|PASSPHRASE|TIMESTAMP|PROJECT)|OKX_(?:API_KEY|SECRET_KEY|API_PASSPHRASE|PROJECT_ID)',

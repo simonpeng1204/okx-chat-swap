@@ -46,8 +46,7 @@ export function createWalletController({
 
   function reviewed(preview) {
     try {
-      // The trusted reviewer must deserialize these exact bound bytes and check their instructions.
-      const tx = reviewTransaction(preview.payload);
+      const tx = reviewTransaction(preview.payload, preview);
       return tx && typeof tx === 'object' && typeof tx.then !== 'function' ? tx : null;
     } catch {
       return null;
@@ -75,7 +74,7 @@ export function createWalletController({
       if (link && current(selection)) onLaunchLink(link);
     };
     try {
-      const { OKXUniversalProvider, OKXSolanaProvider } = await loadSdk();
+      const { OKXUniversalProvider, OKXSolanaProvider, toWalletTransaction = tx => tx } = await loadSdk();
       if (!current(selection)) throw new Error('Preview changed or expired');
       universal = await OKXUniversalProvider.init({
         dappMetaData: { name: 'Solana Swap Review', icon: selection.icon },
@@ -90,7 +89,7 @@ export function createWalletController({
       if (!current(selection) || !Array.isArray(authorized)
           || !authorized.includes(SOLANA_MAINNET + ':' + selection.recipient)
           || account(solana) !== selection.recipient) throw new Error('Wallet or preview mismatch');
-      session = { preview: selection.preview, solana };
+      session = { preview: selection.preview, solana, toWalletTransaction };
       return selection.recipient;
     } finally {
       universal?.off?.('display_uri', showLink);
@@ -102,10 +101,12 @@ export function createWalletController({
     const selection = target();
     if (busy || !selection || !connected(selection)) throw new Error('Signature unavailable');
     const tx = reviewed(selection.preview);
-    if (!tx || !current(selection) || !connected(selection)) throw new Error('Transaction review required');
+    if (!tx) throw new Error('Transaction review required');
+    const transaction = session.toWalletTransaction(tx);
+    if (!current(selection) || !connected(selection)) throw new Error('Preview or wallet changed');
     busy = true;
     try {
-      await session.solana.signTransaction(tx, SOLANA_MAINNET);
+      await session.solana.signTransaction(transaction, SOLANA_MAINNET);
     } finally {
       busy = false;
     }

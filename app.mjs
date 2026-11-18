@@ -1,4 +1,4 @@
-import { inspectPreview } from './confirmation.mjs';
+import { inspectPreview, reviewedTransactionBytes } from './confirmation.mjs';
 import { findPublicIcon } from './hosting.mjs';
 import { createWalletController, SOLANA_MAINNET } from './wallet.mjs';
 import { deployment } from './deployment.mjs';
@@ -9,6 +9,8 @@ const labels = {
   fixture_material: '发现测试材料，钱包操作已锁定。',
   quote_only: '报价预览哈希已核验。等待绑定的未签名交易。',
   unsigned_unreviewed: '预览哈希与绑定字段已核验。未签名交易仍需指令语义审查。',
+  unsigned_rejected: '未签名交易未通过指令审查，钱包操作已锁定。',
+  unsigned_reviewed: '未签名交易已通过离线指令审查。区块哈希新鲜度未链上验证。',
   expired: '预览已过期。请向父代理获取新预览和新哈希。',
   hash_required: '请输入父代理独立提供的 64 位 SHA-256 哈希。',
   hash_mismatch: '哈希不匹配。请向父代理重新核对预览和原始哈希。',
@@ -29,6 +31,7 @@ const wallet = createWalletController({
   getPreview: () => selection,
   getIcon: () => icon,
   loadSdk: () => import('./wallet-sdk.mjs'),
+  reviewTransaction: (_payload, reviewed) => reviewedTransactionBytes(reviewed),
   onLaunchLink(url) {
     launch.href = url;
     launch.hidden = false;
@@ -56,7 +59,11 @@ function refresh() {
 
   connectButton.disabled = !state.connect;
   signButton.disabled = !state.sign;
-  if (selection) text('review-status', labels[expired ? 'expired' : tooEarly ? 'clock' : selection.status]);
+  if (selection) {
+    const label = labels[expired ? 'expired' : tooEarly ? 'clock' : selection.status];
+    const reason = !expired && !tooEarly && selection.semantics?.reasons[0];
+    text('review-status', reason ? label + ' ' + reason : label);
+  }
   if (selection?.expiresAt) {
     const seconds = Math.max(0, Math.ceil((selection.expiresAt - now) / 1000));
     text('countdown', tooEarly ? '' : seconds ? '剩余 ' + seconds + ' 秒' : '已过期');
@@ -68,8 +75,8 @@ function refresh() {
     else if (tooEarly) status = '请核对系统时钟。';
     else if (state.busy) status = '等待 OKX 钱包响应。';
     else if (walletMessage) status = walletMessage;
-    else if (state.connected) status = '钱包地址已匹配。签名仍需通过交易指令审查。';
-    else if (state.connect) status = '可手动连接 OKX 钱包。签名仍需通过交易指令审查。';
+    else if (state.connected) status = '钱包地址已匹配。可手动请求签名。';
+    else if (state.connect) status = '可手动连接 OKX 钱包。';
   }
   text('wallet-status', status);
 }

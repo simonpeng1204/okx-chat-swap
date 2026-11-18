@@ -10,7 +10,8 @@ if (args.length !== 0 && (args.length !== 2 || args[0] !== '--pages')) {
 }
 const publicBase = args.length ? pagesBase(args[1]) : null;
 const outputDir = join(dir, publicBase ? 'dist-pages' : 'dist');
-const staticFiles = ['app.mjs', 'confirmation.mjs', 'hosting.mjs', 'icon.png', 'styles.css', 'wallet.mjs'];
+const staticFiles = ['app.mjs', 'confirmation.mjs', 'hosting.mjs', 'icon.png', 'semantics.mjs',
+  'solana-wire.mjs', 'styles.css', 'wallet.mjs'];
 
 let sdk;
 let html = await readFile(join(dir, 'index.html'), 'utf8');

@@ -2,7 +2,9 @@
   "name": "solana-swap-review",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "pretest": "node build.mjs",
     "test": "node --experimental-vm-modules --disable-warning=ExperimentalWarning --test --test-isolation=none test/*.test.mjs",
@@ -11,7 +13,8 @@
   },
   "dependencies": {
     "@okxconnect/solana-provider": "1.9.1",
-    "@okxconnect/universal-provider": "1.9.1"
+    "@okxconnect/universal-provider": "1.9.1",
+    "@solana/web3.js": "1.99.0"
   },
   "devDependencies": {
     "esbuild": "0.28.2"
